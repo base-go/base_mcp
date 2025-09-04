@@ -64,9 +64,9 @@ func main() {
 			server.WithBaseURL(baseURL),
 		)
 		
-		// Add SSE handler to our mux (using default paths)
-		mux.Handle("/sse", sseServer.SSEHandler())
-		mux.Handle("/message", sseServer.MessageHandler())
+		// Use the SSE server's main ServeHTTP method for all SSE routes
+		mux.Handle("/sse", sseServer)
+		mux.Handle("/message", sseServer)
 		
 		// Start unified HTTP server
 		httpServer := &http.Server{
