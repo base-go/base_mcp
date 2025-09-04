@@ -49,45 +49,45 @@ func main() {
 		log.Printf("Server ready at %s", baseURL)
 		log.Printf("- MCP SSE endpoint: %s/sse", baseURL)
 		
+		// Since Caprover uses nginx proxy and container only exposes 8080,
+		// we need to serve both SSE and docs on the same port 8080
+		log.Printf("Creating unified HTTP server on port %s", port)
+		
+		// Create custom mux for unified server
+		mux := http.NewServeMux()
+		
 		// Add documentation routes if enabled
 		if enableDocs == "true" {
 			log.Printf("- Documentation: %s/docs/", baseURL)  
 			log.Printf("- Landing page: %s/", baseURL)
-			
-			// Start documentation server on a separate port
-			go func() {
-				docsMux := http.NewServeMux()
-				setupHTTPRoutes(docsMux, baseURL)
-				
-				// Use same port for docs (since port 80 might not be available)
-				docsPort := "8081"
-				log.Printf("Starting documentation server on port %s", docsPort)
-				log.Printf("Documentation will be available at %s:%s", baseURL, docsPort)
-				
-				if err := http.ListenAndServe(":"+docsPort, docsMux); err != nil {
-					log.Printf("Documentation server failed: %v", err)
-				} else {
-					log.Printf("Documentation server started successfully on port %s", docsPort)
-				}
-			}()
+			log.Printf("Adding documentation routes to unified server")
+			setupHTTPRoutes(mux, baseURL)
 		} else {
 			log.Printf("Documentation disabled (ENABLE_DOCS=%s)", enableDocs)
 		}
 		
-		// Create and start SSE server with minimal configuration
+		// Create SSE server
 		log.Printf("Creating SSE server instance...")
 		sseServer := server.NewSSEServer(mcpServer)
 		log.Printf("SSE server created successfully")
 		
-		log.Printf("Starting SSE server on port %s", port)
+		// Add SSE routes to the unified server
+		log.Printf("Adding SSE routes to unified server")
+		mux.Handle("/sse", sseServer)
+		mux.Handle("/message", sseServer)
 		log.Printf("SSE endpoint will be: %s/sse", baseURL)
 		
-		// Start the server directly
-		log.Printf("Calling sseServer.Start()...")
-		if err := sseServer.Start(":" + port); err != nil {
-			log.Fatalf("SSE Server failed to start: %v", err)
+		// Start unified HTTP server
+		httpServer := &http.Server{
+			Addr:    ":" + port,
+			Handler: mux,
 		}
-		log.Printf("SSE Server started successfully - this line should not appear since Start() blocks")
+		
+		log.Printf("Starting unified HTTP server on port %s...", port)
+		if err := httpServer.ListenAndServe(); err != nil {
+			log.Fatalf("Unified HTTP server failed to start: %v", err)
+		}
+		log.Printf("Unified HTTP server started successfully - this line should not appear since ListenAndServe() blocks")
 	} else {
 		// stdio mode for local MCP clients
 		log.Println("Starting Base Framework MCP Server in stdio mode")
