@@ -59,21 +59,35 @@ func main() {
 				docsMux := http.NewServeMux()
 				setupHTTPRoutes(docsMux, baseURL)
 				
-				// Use port 80 for documentation (standard HTTP port)
-				docsPort := "80"
+				// Use same port for docs (since port 80 might not be available)
+				docsPort := "8081"
 				log.Printf("Starting documentation server on port %s", docsPort)
+				log.Printf("Documentation will be available at %s:%s", baseURL, docsPort)
+				
 				if err := http.ListenAndServe(":"+docsPort, docsMux); err != nil {
-					log.Printf("Documentation server error: %v", err)
+					log.Printf("Documentation server failed: %v", err)
+				} else {
+					log.Printf("Documentation server started successfully on port %s", docsPort)
 				}
 			}()
+		} else {
+			log.Printf("Documentation disabled (ENABLE_DOCS=%s)", enableDocs)
 		}
 		
-		// Create and start SSE server using the simple direct approach
-		log.Printf("Starting SSE server on port %s", port)
+		// Create and start SSE server with minimal configuration
+		log.Printf("Creating SSE server instance...")
 		sseServer := server.NewSSEServer(mcpServer)
+		log.Printf("SSE server created successfully")
+		
+		log.Printf("Starting SSE server on port %s", port)
+		log.Printf("SSE endpoint will be: %s/sse", baseURL)
+		
+		// Start the server directly
+		log.Printf("Calling sseServer.Start()...")
 		if err := sseServer.Start(":" + port); err != nil {
-			log.Fatalf("SSE Server error: %v\n", err)
+			log.Fatalf("SSE Server failed to start: %v", err)
 		}
+		log.Printf("SSE Server started successfully - this line should not appear since Start() blocks")
 	} else {
 		// stdio mode for local MCP clients
 		log.Println("Starting Base Framework MCP Server in stdio mode")
