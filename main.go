@@ -21,10 +21,17 @@ func main() {
 	if port := os.Getenv("PORT"); port != "" {
 		// SSE mode for production
 		log.Printf("Starting SSE server on port %s", port)
+		log.Printf("SSE endpoints will be available at:")
+		log.Printf("- Root: https://mcp.base.al/")
+		log.Printf("- SSE: https://mcp.base.al/sse") 
+		log.Printf("- Message: https://mcp.base.al/message")
+		
 		sseServer := server.NewSSEServer(mcpServer)
+		log.Printf("SSE server created, starting...")
 		if err := sseServer.Start(":" + port); err != nil {
 			log.Fatalf("SSE Server error: %v", err)
 		}
+		log.Printf("This line should not appear - Start() blocks")
 	} else {
 		// stdio mode for local
 		log.Println("Starting stdio mode")
