@@ -61,11 +61,10 @@ func main() {
 		
 		// Create SSE server and integrate with custom mux
 		sseServer := server.NewSSEServer(mcpServer,
-			server.WithStaticBasePath("/sse"),
 			server.WithBaseURL(baseURL),
 		)
 		
-		// Add SSE handler to our mux
+		// Add SSE handler to our mux (using default paths)
 		mux.Handle("/sse", sseServer.SSEHandler())
 		mux.Handle("/message", sseServer.MessageHandler())
 		
