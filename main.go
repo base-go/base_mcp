@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/mark3labs/mcp-go/mcp"
@@ -19,9 +20,23 @@ func main() {
 
 	// Check mode
 	if port := os.Getenv("PORT"); port != "" {
-		// Try stdio over HTTP approach
-		log.Printf("Starting stdio over HTTP on port %s", port)
-		if err := server.ServeHTTP(mcpServer, ":"+port); err != nil {
+		// SSE mode with request logging
+		log.Printf("Starting SSE server with logging on port %s", port)
+		
+		// Create SSE server
+		sseServer := server.NewSSEServer(mcpServer)
+		log.Printf("SSE server created")
+		
+		// Add HTTP request logging middleware
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("HTTP Request: %s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
+			log.Printf("Headers: %v", r.Header)
+			sseServer.ServeHTTP(w, r)
+			log.Printf("Response completed for %s %s", r.Method, r.URL.Path)
+		})
+		
+		log.Printf("Starting HTTP server with SSE handler...")
+		if err := http.ListenAndServe(":"+port, handler); err != nil {
 			log.Fatalf("HTTP Server error: %v", err)
 		}
 	} else {
