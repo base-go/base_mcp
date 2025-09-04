@@ -16,11 +16,8 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the main application for ARM64
+# Build the main application for ARM64 (docs are now embedded)
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -installsuffix cgo -o base-mcp .
-
-# Build all platform binaries for releases
-RUN chmod +x build.sh && ./build.sh
 
 # Final stage
 FROM alpine:latest
@@ -34,10 +31,8 @@ RUN addgroup -g 1001 -S appuser && \
 
 WORKDIR /app
 
-# Copy the binary from builder stage
+# Copy only the binary (docs are embedded, no releases needed)
 COPY --from=builder /app/base-mcp .
-COPY --from=builder /app/md ./md
-COPY --from=builder /app/releases ./releases
 
 # Change ownership to non-root user
 RUN chown -R appuser:appuser /app

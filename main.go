@@ -2,17 +2,19 @@ package main
 
 import (
 	"context"
+	"embed"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )
+
+//go:embed md
+var docsFS embed.FS
 
 func main() {
 	// Create simple MCP server
@@ -21,10 +23,10 @@ func main() {
 	// Add Base Framework tools
 	infoTool := mcp.NewTool("base_info", mcp.WithDescription("Get Base Framework information"))
 	mcpServer.AddTool(infoTool, handleBaseInfo)
-	
+
 	cliTool := mcp.NewTool("base_cli", mcp.WithDescription("Get Base Framework CLI commands and usage"))
 	mcpServer.AddTool(cliTool, handleBaseCLI)
-	
+
 	docsTool := mcp.NewTool("base_docs", mcp.WithDescription("Get Base Framework documentation and features"))
 	mcpServer.AddTool(docsTool, handleBaseDocs)
 
@@ -32,14 +34,13 @@ func main() {
 	if port := os.Getenv("PORT"); port != "" {
 		// Web mode - serve installer page
 		log.Printf("Starting web installer server on port %s", port)
-		
+
 		mux := http.NewServeMux()
-		
+
 		// Serve installer page
 		mux.HandleFunc("/", serveInstaller)
 		mux.HandleFunc("/install", serveInstallScript)
-		mux.HandleFunc("/releases/", serveReleases)
-		
+
 		log.Printf("Installer available at: http://localhost:%s", port)
 		if err := http.ListenAndServe(":"+port, mux); err != nil {
 			log.Fatalf("HTTP Server error: %v", err)
@@ -82,21 +83,21 @@ func handleBaseCLI(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallT
 func handleBaseDocs(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	// Combine multiple documentation files for comprehensive docs
 	var allDocs strings.Builder
-	
+
 	// Main overview from index.md
 	if content, err := readMarkdownFile("md/index.md"); err == nil {
 		allDocs.WriteString(content)
 		allDocs.WriteString("\n\n")
 	}
-	
+
 	// Core modules documentation
 	coreModules := []string{
-		"router", "emitter", "storage", "middleware", 
+		"router", "emitter", "storage", "middleware",
 		"logger", "websocket", "auth", "email",
 	}
-	
+
 	allDocs.WriteString("# Core Framework Modules\n\n")
-	
+
 	for _, module := range coreModules {
 		if content, err := readMarkdownFile(fmt.Sprintf("md/docs/%s.md", module)); err == nil {
 			allDocs.WriteString(fmt.Sprintf("## %s\n\n", strings.Title(module)))
@@ -104,7 +105,7 @@ func handleBaseDocs(ctx context.Context, request mcp.CallToolRequest) (*mcp.Call
 			allDocs.WriteString("\n\n")
 		}
 	}
-	
+
 	// Add configuration docs
 	if content, err := readMarkdownFile("md/docs/configuration.md"); err == nil {
 		allDocs.WriteString("# Configuration\n\n")
@@ -188,7 +189,7 @@ func serveInstaller(w http.ResponseWriter, r *http.Request) {
     </div>
 </body>
 </html>`
-	
+
 	w.Header().Set("Content-Type", "text/html")
 	fmt.Fprint(w, html)
 }
@@ -220,27 +221,55 @@ case $OS in
     *) echo "❌ Unsupported OS: $OS"; exit 1 ;;
 esac
 
-# Download URL (you'll need to build and host binaries)
-BINARY_URL="https://mcp.base.al/releases/base-mcp-$OS-$ARCH"
+# Get latest release from GitHub  
+REPO="base-go/base"
+echo "📡 Fetching latest release info..."
+LATEST_URL="https://api.github.com/repos/$REPO/releases/latest"
 
-# Download binary
-echo "📥 Downloading base-mcp for $OS-$ARCH..."
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$BINARY_URL" -o "$BASE_DIR/base-mcp"
+    RELEASE_INFO=$(curl -fsSL "$LATEST_URL")
 elif command -v wget >/dev/null 2>&1; then
-    wget -q "$BINARY_URL" -O "$BASE_DIR/base-mcp"
+    RELEASE_INFO=$(wget -qO- "$LATEST_URL")
 else
     echo "❌ Neither curl nor wget found. Please install one of them."
     exit 1
 fi
 
+# Extract download URL for the specific binary
+BINARY_NAME="base-mcp-$OS-$ARCH"
+DOWNLOAD_URL=$(echo "$RELEASE_INFO" | grep -o "https://github.com/$REPO/releases/download/[^\"]*/$BINARY_NAME" | head -1)
+
+if [ -z "$DOWNLOAD_URL" ]; then
+    echo "❌ Could not find binary for $OS-$ARCH in latest release"
+    echo "Available binaries:"
+    echo "$RELEASE_INFO" | grep -o "base-mcp-[^\"]*" | sort | uniq
+    exit 1
+fi
+
+# Download binary
+echo "📥 Downloading $BINARY_NAME..."
+if command -v curl >/dev/null 2>&1; then
+    curl -fsSL "$DOWNLOAD_URL" -o "$BASE_DIR/base-mcp"
+else
+    wget -q "$DOWNLOAD_URL" -O "$BASE_DIR/base-mcp"
+fi
+
 # Make executable
 chmod +x "$BASE_DIR/base-mcp"
 
-echo "✅ Base MCP Server installed to $BASE_DIR/base-mcp"
+# Verify installation
+if "$BASE_DIR/base-mcp" --help >/dev/null 2>&1 || [ $? -eq 0 ]; then
+    echo "✅ Base MCP Server installed successfully to $BASE_DIR/base-mcp"
+else
+    echo "⚠️  Installation completed but binary verification failed"
+fi
+
 echo ""
 echo "📝 Next steps:"
-echo "1. Add to your Claude Code configuration (~/.claude.json):"
+echo "1. Add as global MCP server (recommended):"
+echo "   claude mcp add --scope user base ~/.base/base-mcp"
+echo ""
+echo "2. Or add manually to ~/.claude.json:"
 echo '   {'
 echo '     "mcpServers": {'
 echo '       "base": {'
@@ -250,66 +279,29 @@ echo '       }'
 echo '     }'
 echo '   }'
 echo ""
-echo "2. Test with: claude mcp list"
+echo "3. Verify installation:"
+echo "   claude mcp list"
 echo ""
 echo "🎉 Installation complete!"
+echo ""
+echo "Available tools:"
+echo "- base_info: Get Base Framework information"
+echo "- base_cli: Base CLI commands and usage"
+echo "- base_docs: Complete framework documentation"
 `
-	
+
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Disposition", "attachment; filename=install.sh")
 	fmt.Fprint(w, script)
 }
 
-func serveReleases(w http.ResponseWriter, r *http.Request) {
-	// Extract filename from URL path
-	filename := r.URL.Path[len("/releases/"):]
-	
-	// Basic security - only allow expected binary names
-	if !isValidBinaryName(filename) {
-		http.NotFound(w, r)
-		return
-	}
-	
-	// Serve the binary file from releases directory
-	http.ServeFile(w, r, fmt.Sprintf("releases/%s", filename))
-}
-
-func isValidBinaryName(filename string) bool {
-	validNames := []string{
-		"base-mcp-darwin-amd64",
-		"base-mcp-darwin-arm64", 
-		"base-mcp-linux-amd64",
-		"base-mcp-linux-arm64",
-	}
-	
-	for _, valid := range validNames {
-		if filename == valid {
-			return true
-		}
-	}
-	return false
-}
-
 func readMarkdownFile(filePath string) (string, error) {
-	// Get the directory where the binary is located
-	exeDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	// Read from embedded filesystem
+	content, err := docsFS.ReadFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to get executable directory: %w", err)
+		return "", fmt.Errorf("failed to read embedded file %s: %w", filePath, err)
 	}
-	
-	// Try relative to executable first, then relative to current directory
-	fullPath := filepath.Join(exeDir, filePath)
-	
-	// Check if file exists, if not try current directory
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-		fullPath = filePath
-	}
-	
-	content, err := ioutil.ReadFile(fullPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to read file %s: %w", filePath, err)
-	}
-	
+
 	// Remove YAML frontmatter if present
 	contentStr := string(content)
 	if strings.HasPrefix(contentStr, "---") {
@@ -318,6 +310,6 @@ func readMarkdownFile(filePath string) (string, error) {
 			contentStr = strings.TrimSpace(parts[2])
 		}
 	}
-	
+
 	return contentStr, nil
 }
