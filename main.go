@@ -29,6 +29,7 @@ func main() {
 		// Serve installer page
 		mux.HandleFunc("/", serveInstaller)
 		mux.HandleFunc("/install", serveInstallScript)
+		mux.HandleFunc("/releases/", serveReleases)
 		
 		log.Printf("Installer available at: http://localhost:%s", port)
 		if err := http.ListenAndServe(":"+port, mux); err != nil {
@@ -184,4 +185,34 @@ echo "🎉 Installation complete!"
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Disposition", "attachment; filename=install.sh")
 	fmt.Fprint(w, script)
+}
+
+func serveReleases(w http.ResponseWriter, r *http.Request) {
+	// Extract filename from URL path
+	filename := r.URL.Path[len("/releases/"):]
+	
+	// Basic security - only allow expected binary names
+	if !isValidBinaryName(filename) {
+		http.NotFound(w, r)
+		return
+	}
+	
+	// Serve the binary file from releases directory
+	http.ServeFile(w, r, fmt.Sprintf("releases/%s", filename))
+}
+
+func isValidBinaryName(filename string) bool {
+	validNames := []string{
+		"base-mcp-darwin-amd64",
+		"base-mcp-darwin-arm64", 
+		"base-mcp-linux-amd64",
+		"base-mcp-linux-arm64",
+	}
+	
+	for _, valid := range validNames {
+		if filename == valid {
+			return true
+		}
+	}
+	return false
 }
