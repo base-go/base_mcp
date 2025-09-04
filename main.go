@@ -19,19 +19,17 @@ func main() {
 
 	// Check mode
 	if port := os.Getenv("PORT"); port != "" {
-		// SSE mode for production
-		log.Printf("Starting SSE server on port %s", port)
-		log.Printf("SSE endpoints will be available at:")
+		// HTTP mode for production (more reliable than SSE)
+		log.Printf("Starting HTTP server on port %s", port)
+		log.Printf("HTTP endpoints will be available at:")
 		log.Printf("- Root: https://mcp.base.al/")
-		log.Printf("- SSE: https://mcp.base.al/sse") 
-		log.Printf("- Message: https://mcp.base.al/message")
 		
-		sseServer := server.NewSSEServer(mcpServer)
-		log.Printf("SSE server created, starting...")
-		if err := sseServer.Start(":" + port); err != nil {
-			log.Fatalf("SSE Server error: %v", err)
+		httpServer := server.NewHTTPServer(mcpServer)
+		log.Printf("HTTP server created, starting...")
+		if err := httpServer.ListenAndServe(":" + port); err != nil {
+			log.Fatalf("HTTP Server error: %v", err)
 		}
-		log.Printf("This line should not appear - Start() blocks")
+		log.Printf("This line should not appear - ListenAndServe() blocks")
 	} else {
 		// stdio mode for local
 		log.Println("Starting stdio mode")
