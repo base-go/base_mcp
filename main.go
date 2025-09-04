@@ -27,10 +27,15 @@ func main() {
 		sseServer := server.NewSSEServer(mcpServer)
 		log.Printf("SSE server created")
 		
-		// Add HTTP request logging middleware
+		// Add HTTP request logging middleware with SSE connection tracking
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("HTTP Request: %s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
 			log.Printf("Headers: %v", r.Header)
+			
+			if r.URL.Path == "/sse" && r.Header.Get("Accept") == "text/event-stream" {
+				log.Printf("SSE connection attempt - keeping alive")
+			}
+			
 			sseServer.ServeHTTP(w, r)
 			log.Printf("Response completed for %s %s", r.Method, r.URL.Path)
 		})
