@@ -46,36 +46,38 @@ func main() {
 			enableDocs = "true" // enabled by default
 		}
 		
-		if enableDocs == "true" {
-			// Start documentation server in a separate goroutine
-			go func() {
-				docsMux := http.NewServeMux()
-				setupHTTPRoutes(docsMux, baseURL)
-				
-				// Use port+1 for documentation
-				docsPort := fmt.Sprintf("%d", 8080+1000) // Default to 9080
-				if p, err := fmt.Sscanf(port, "%d", &docsPort); err == nil && p == 1 {
-					docsPortNum := 0
-					fmt.Sscanf(port, "%d", &docsPortNum)
-					docsPort = fmt.Sprintf("%d", docsPortNum+1000)
-				}
-				
-				log.Printf("- Documentation: %s/docs/ (on port %s)", baseURL, docsPort)
-				log.Printf("- Usage guide: %s/ (on port %s)", baseURL, docsPort)
-				
-				if err := http.ListenAndServe(":"+docsPort, docsMux); err != nil {
-					log.Printf("Documentation server error: %v", err)
-				}
-			}()
-		}
-		
-		// Start SSE server using the proper method
 		log.Printf("Server ready at %s", baseURL)
 		log.Printf("- MCP SSE endpoint: %s/sse", baseURL)
 		
-		sseServer := server.NewSSEServer(mcpServer)
-		if err := sseServer.Start(":" + port); err != nil {
-			log.Fatalf("SSE Server error: %v\n", err)
+		// Create HTTP server with custom mux
+		mux := http.NewServeMux()
+		
+		// Add documentation routes if enabled
+		if enableDocs == "true" {
+			log.Printf("- Documentation: %s/docs/", baseURL)
+			log.Printf("- Landing page: %s/", baseURL)
+			setupHTTPRoutes(mux, baseURL)
+		}
+		
+		// Create SSE server and integrate with custom mux
+		sseServer := server.NewSSEServer(mcpServer,
+			server.WithStaticBasePath("/sse"),
+			server.WithBaseURL(baseURL),
+		)
+		
+		// Add SSE handler to our mux
+		mux.Handle("/sse", sseServer.SSEHandler())
+		mux.Handle("/message", sseServer.MessageHandler())
+		
+		// Start unified HTTP server
+		httpServer := &http.Server{
+			Addr:    ":" + port,
+			Handler: mux,
+		}
+		
+		log.Printf("Starting unified HTTP server...")
+		if err := httpServer.ListenAndServe(); err != nil {
+			log.Fatalf("HTTP Server error: %v\n", err)
 		}
 	} else {
 		// stdio mode for local MCP clients
