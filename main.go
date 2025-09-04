@@ -27,21 +27,32 @@ func main() {
 		sseServer := server.NewSSEServer(mcpServer)
 		log.Printf("SSE server created")
 		
-		// Add HTTP request logging middleware with SSE connection tracking
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			log.Printf("HTTP Request: %s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
-			log.Printf("Headers: %v", r.Header)
-			
-			if r.URL.Path == "/sse" && r.Header.Get("Accept") == "text/event-stream" {
-				log.Printf("SSE connection attempt - keeping alive")
-			}
-			
+		// Create custom handler for both SSE and direct HTTP requests
+		mux := http.NewServeMux()
+		
+		// Add SSE handler for SSE transport
+		mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("SSE Request: %s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
 			sseServer.ServeHTTP(w, r)
-			log.Printf("Response completed for %s %s", r.Method, r.URL.Path)
 		})
 		
-		log.Printf("Starting HTTP server with SSE handler...")
-		if err := http.ListenAndServe(":"+port, handler); err != nil {
+		// Add direct HTTP MCP handler for HTTP transport (simplified)
+		mux.HandleFunc("/message", func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("HTTP MCP Request: %s %s %s", r.Method, r.URL.Path, r.RemoteAddr)
+			
+			if r.Method == "POST" {
+				// For now, respond with a simple error to Claude Code
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"HTTP transport not fully implemented - use SSE transport"}}`))
+			} else {
+				// Fallback to SSE server for other methods
+				sseServer.ServeHTTP(w, r)
+			}
+		})
+		
+		log.Printf("Starting HTTP server with combined SSE/HTTP handler...")
+		if err := http.ListenAndServe(":"+port, mux); err != nil {
 			log.Fatalf("HTTP Server error: %v", err)
 		}
 	} else {
