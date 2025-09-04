@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -15,9 +18,15 @@ func main() {
 	// Create simple MCP server
 	mcpServer := server.NewMCPServer("Base Framework", "1.0.0")
 
-	// Add one simple tool
-	tool := mcp.NewTool("base_info", mcp.WithDescription("Get Base Framework information"))
-	mcpServer.AddTool(tool, handleBaseInfo)
+	// Add Base Framework tools
+	infoTool := mcp.NewTool("base_info", mcp.WithDescription("Get Base Framework information"))
+	mcpServer.AddTool(infoTool, handleBaseInfo)
+	
+	cliTool := mcp.NewTool("base_cli", mcp.WithDescription("Get Base Framework CLI commands and usage"))
+	mcpServer.AddTool(cliTool, handleBaseCLI)
+	
+	docsTool := mcp.NewTool("base_docs", mcp.WithDescription("Get Base Framework documentation and features"))
+	mcpServer.AddTool(docsTool, handleBaseDocs)
 
 	// Check if running in web mode (with PORT env var) or local stdio mode
 	if port := os.Getenv("PORT"); port != "" {
@@ -47,7 +56,65 @@ func main() {
 func handleBaseInfo(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			mcp.NewTextContent("Base Framework is a modern Go web framework for rapid development."),
+			mcp.NewTextContent("Base Framework is a modern Go web framework for rapid development with intelligent code generation, smart relationship detection, and production-ready features out of the box."),
+		},
+	}, nil
+}
+
+func handleBaseCLI(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Read CLI documentation from markdown file
+	content, err := readMarkdownFile("md/docs/cli.md")
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				mcp.NewTextContent("Error reading CLI documentation: " + err.Error()),
+			},
+		}, nil
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			mcp.NewTextContent(content),
+		},
+	}, nil
+}
+
+func handleBaseDocs(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Combine multiple documentation files for comprehensive docs
+	var allDocs strings.Builder
+	
+	// Main overview from index.md
+	if content, err := readMarkdownFile("md/index.md"); err == nil {
+		allDocs.WriteString(content)
+		allDocs.WriteString("\n\n")
+	}
+	
+	// Core modules documentation
+	coreModules := []string{
+		"router", "emitter", "storage", "middleware", 
+		"logger", "websocket", "auth", "email",
+	}
+	
+	allDocs.WriteString("# Core Framework Modules\n\n")
+	
+	for _, module := range coreModules {
+		if content, err := readMarkdownFile(fmt.Sprintf("md/docs/%s.md", module)); err == nil {
+			allDocs.WriteString(fmt.Sprintf("## %s\n\n", strings.Title(module)))
+			allDocs.WriteString(content)
+			allDocs.WriteString("\n\n")
+		}
+	}
+	
+	// Add configuration docs
+	if content, err := readMarkdownFile("md/docs/configuration.md"); err == nil {
+		allDocs.WriteString("# Configuration\n\n")
+		allDocs.WriteString(content)
+		allDocs.WriteString("\n\n")
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			mcp.NewTextContent(allDocs.String()),
 		},
 	}, nil
 }
@@ -77,12 +144,16 @@ func serveInstaller(w http.ResponseWriter, r *http.Request) {
     
     <div class="step">
         <h2>⚙️ Configuration</h2>
-        <p>Add to your Claude Code configuration file (<code>~/.claude.json</code> or <code>%APPDATA%\.claude.json</code>):</p>
+        <p><strong>Option 1:</strong> Add as global MCP server (recommended):</p>
+        <div class="code">claude mcp add --scope user base ~/.base/base-mcp</div>
+        <p><strong>Option 2:</strong> Manual configuration in <code>~/.claude.json</code>:</p>
         <div class="code">{
   "mcpServers": {
     "base": {
+      "type": "stdio",
       "command": "~/.base/base-mcp",
-      "args": []
+      "args": [],
+      "env": {}
     }
   }
 }</div>
@@ -99,9 +170,11 @@ func serveInstaller(w http.ResponseWriter, r *http.Request) {
     
     <div class="step">
         <h2>🔧 Usage</h2>
-        <p>Once configured, you can use the Base Framework MCP server in Claude Code:</p>
+        <p>Once configured, you can use these Base Framework tools in Claude Code:</p>
         <ul>
-            <li><strong>base_info</strong>: Get Base Framework information and documentation</li>
+            <li><strong>base_info</strong>: Get Base Framework overview and information</li>
+            <li><strong>base_cli</strong>: Complete CLI commands reference with examples</li>
+            <li><strong>base_docs</strong>: Comprehensive framework documentation and features</li>
         </ul>
     </div>
     
@@ -215,4 +288,36 @@ func isValidBinaryName(filename string) bool {
 		}
 	}
 	return false
+}
+
+func readMarkdownFile(filePath string) (string, error) {
+	// Get the directory where the binary is located
+	exeDir, err := filepath.Abs(filepath.Dir(os.Args[0]))
+	if err != nil {
+		return "", fmt.Errorf("failed to get executable directory: %w", err)
+	}
+	
+	// Try relative to executable first, then relative to current directory
+	fullPath := filepath.Join(exeDir, filePath)
+	
+	// Check if file exists, if not try current directory
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		fullPath = filePath
+	}
+	
+	content, err := ioutil.ReadFile(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read file %s: %w", filePath, err)
+	}
+	
+	// Remove YAML frontmatter if present
+	contentStr := string(content)
+	if strings.HasPrefix(contentStr, "---") {
+		parts := strings.SplitN(contentStr, "---", 3)
+		if len(parts) >= 3 {
+			contentStr = strings.TrimSpace(parts[2])
+		}
+	}
+	
+	return contentStr, nil
 }
