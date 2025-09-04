@@ -49,34 +49,30 @@ func main() {
 		log.Printf("Server ready at %s", baseURL)
 		log.Printf("- MCP SSE endpoint: %s/sse", baseURL)
 		
-		// Create HTTP server with custom mux
-		mux := http.NewServeMux()
-		
 		// Add documentation routes if enabled
 		if enableDocs == "true" {
-			log.Printf("- Documentation: %s/docs/", baseURL)
+			log.Printf("- Documentation: %s/docs/", baseURL)  
 			log.Printf("- Landing page: %s/", baseURL)
-			setupHTTPRoutes(mux, baseURL)
+			
+			// Start documentation server on a separate port
+			go func() {
+				docsMux := http.NewServeMux()
+				setupHTTPRoutes(docsMux, baseURL)
+				
+				// Use port 80 for documentation (standard HTTP port)
+				docsPort := "80"
+				log.Printf("Starting documentation server on port %s", docsPort)
+				if err := http.ListenAndServe(":"+docsPort, docsMux); err != nil {
+					log.Printf("Documentation server error: %v", err)
+				}
+			}()
 		}
 		
-		// Create SSE server and integrate with custom mux
-		sseServer := server.NewSSEServer(mcpServer,
-			server.WithBaseURL(baseURL),
-		)
-		
-		// Use the SSE server's main ServeHTTP method for all SSE routes
-		mux.Handle("/sse", sseServer)
-		mux.Handle("/message", sseServer)
-		
-		// Start unified HTTP server
-		httpServer := &http.Server{
-			Addr:    ":" + port,
-			Handler: mux,
-		}
-		
-		log.Printf("Starting unified HTTP server...")
-		if err := httpServer.ListenAndServe(); err != nil {
-			log.Fatalf("HTTP Server error: %v\n", err)
+		// Create and start SSE server using the simple direct approach
+		log.Printf("Starting SSE server on port %s", port)
+		sseServer := server.NewSSEServer(mcpServer)
+		if err := sseServer.Start(":" + port); err != nil {
+			log.Fatalf("SSE Server error: %v\n", err)
 		}
 	} else {
 		// stdio mode for local MCP clients
